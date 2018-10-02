@@ -34,7 +34,8 @@ class RabbitMQDStream[R: ClassTag](
                                     @transient val _ssc: StreamingContext,
                                     val distributedKeys: Seq[RabbitMQDistributedKey],
                                     val rabbitMQParams: Map[String, String],
-                                    messageHandler: Delivery => R
+                                    messageHandler: Delivery => R,
+                                    tag: String = null
                                   ) extends InputDStream[R](_ssc) with Logging {
 
   private[streaming] override def name: String = s"RabbitMQ direct stream [$id]"

@@ -38,7 +38,8 @@ class RabbitMQRDD[R: ClassTag](
                                 distributedKeys: Seq[RabbitMQDistributedKey],
                                 rabbitMQParams: Map[String, String],
                                 val countAccumulator: LongAccumulator,
-                                messageHandler: Delivery => R
+                                messageHandler: Delivery => R, 
+                                tag: String = null
                               ) extends RDD[R](sc, Nil) with Logging {
 
   @volatile private var totalCalculated: Option[Long] = None
@@ -163,7 +164,7 @@ class RabbitMQRDD[R: ClassTag](
     val rabbitParams = part.connectionParams
     //Get or create one consumer, create one new channel if this consumer use one connection that was created
     // previously is reused
-    val consumer = getConsumer(part, rabbitParams)
+    val consumer = getConsumer(part, rabbitParams, tag)
     val queueConsumer = consumer.startConsumer
     //Counter to control the number of messages consumed by this partition
     @volatile var numMessages = 0
@@ -239,8 +240,8 @@ class RabbitMQRDD[R: ClassTag](
       null.asInstanceOf[R]
     }
 
-    private def getConsumer(part: RabbitMQPartition, consumerParams: Map[String, String]): Consumer = {
-      val consumer = Consumer(consumerParams)
+    private def getConsumer(part: RabbitMQPartition, consumerParams: Map[String, String], tag: String = null): Consumer = {
+      val consumer = Consumer(consumerParams, tag)
       consumer.setQueue(
         part.queue,
         part.exchangeAndRouting.exchangeName,
@@ -268,10 +269,11 @@ object RabbitMQRDD extends Logging {
                          distributedKeys: Seq[RabbitMQDistributedKey],
                          rabbitMQParams: Map[String, String],
                          countAccumulator: LongAccumulator,
-                         messageHandler: Delivery => R
+                         messageHandler: Delivery => R,
+                         tag: String = null
                         ): RabbitMQRDD[R] = {
 
-    new RabbitMQRDD[R](sc, distributedKeys, rabbitMQParams, countAccumulator, messageHandler)
+    new RabbitMQRDD[R](sc, distributedKeys, rabbitMQParams, countAccumulator, messageHandler, tag)
   }
 
   def getActorSystem: ActorSystem = {

@@ -34,7 +34,7 @@ import scala.util.{Failure, Success, Try}
  * @param params The parameters that should contains the queue options and the consume options
  */
 private[rabbitmq]
-class Consumer(val channel: Channel, params: Map[String, String]) extends Logging {
+class Consumer(val channel: Channel, params: Map[String, String], tag:String) extends Logging {
 
   private var queueName: String = ""
 
@@ -51,8 +51,10 @@ class Consumer(val channel: Channel, params: Map[String, String]) extends Loggin
     val queueConsumer = new QueueingConsumer(channel)
 
     log.debug(s"Starting consuming data from queue: $queueName")
-    channel.basicConsume(queueName, autoAck, queueConsumer)
-
+    if(tag == null)
+      channel.basicConsume(queueName, autoAck, queueConsumer)
+    else 
+      channel.basicConsume(queueName, autoAck, tag, queueConsumer)
     queueConsumer
   }
 
@@ -190,23 +192,23 @@ object Consumer extends Logging with ConsumerParamsUtils {
   def apply: Consumer = {
     getChannel(Map.empty[String, String]) match {
       case Success(channel) =>
-        new Consumer(channel, Map.empty[String, String])
+        new Consumer(channel, Map.empty[String, String], null)
       case Failure(e) =>
         throw new SparkException(s"Error creating channel and connection: ${e.getLocalizedMessage}")
     }
   }
 
-  def apply(channel: Channel, params: Map[String, String]): Consumer =
-    new Consumer(channel, params)
+  def apply(channel: Channel, params: Map[String, String], tag:String): Consumer =
+    new Consumer(channel, params, tag)
 
-  def apply(params: Map[String, String]): Consumer = {
+  def apply(params: Map[String, String], tag:String): Consumer = {
 
     setVirtualHost(params)
     setUserPassword(params)
 
     getChannel(params) match {
       case Success(channel) =>
-        new Consumer(channel, params)
+        new Consumer(channel, params, tag)
       case Failure(e) =>
         throw new SparkException(s"Error creating channel and connection: ${e.getLocalizedMessage}")
     }

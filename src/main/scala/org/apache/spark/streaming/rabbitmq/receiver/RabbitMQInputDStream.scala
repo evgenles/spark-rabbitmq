@@ -33,7 +33,8 @@ private[rabbitmq]
 class RabbitMQInputDStream[R: ClassTag](
                                          @transient ssc_ : StreamingContext,
                                          params: Map[String, String],
-                                         messageHandler: Delivery => R
+                                         messageHandler: Delivery => R,
+                                         tag: String = null
                                        ) extends ReceiverInputDStream[R](ssc_) with Logging {
 
   private val storageLevelParam =
@@ -41,7 +42,7 @@ class RabbitMQInputDStream[R: ClassTag](
 
   override def getReceiver(): Receiver[R] = {
 
-    new RabbitMQReceiver[R](params, StorageLevel.fromString(storageLevelParam), messageHandler)
+    new RabbitMQReceiver[R](params, StorageLevel.fromString(storageLevelParam), messageHandler, tag)
   }
 }
 
@@ -49,7 +50,8 @@ private[rabbitmq]
 class RabbitMQReceiver[R: ClassTag](
                                      params: Map[String, String],
                                      storageLevel: StorageLevel,
-                                     messageHandler: Delivery => R
+                                     messageHandler: Delivery => R,
+                                     tag: String = null
                                    )
   extends Receiver[R](storageLevel) with Logging {
 
@@ -57,7 +59,7 @@ class RabbitMQReceiver[R: ClassTag](
     implicit val akkaSystem = akka.actor.ActorSystem()
 
     Try {
-      val consumer = Consumer(params)
+      val consumer = Consumer(params, tag)
 
       if (getFairDispatchFromParams(params))
         consumer.setFairDispatchQoS(getPrefetchCountFromParams(params))
@@ -88,6 +90,7 @@ class RabbitMQReceiver[R: ClassTag](
     try {
       log.info("RabbitMQ consumer start consuming data")
       while (!isStopped() && consumer.channel.isOpen) {
+        
         Try(queueConsumer.nextDelivery())
         match {
           case Success(delivery) =>
