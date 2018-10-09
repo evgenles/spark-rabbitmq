@@ -69,26 +69,26 @@ class RabbitMQReceiver[R: ClassTag](
       (consumer, consumer.startConsumer)
     } match {
       case Success((consumer, queueConsumer)) =>
-        log.info("onStart, Connecting..")
+        System.out.println("onStart, Connecting..")
         new Thread() {
           override def run() {
             receive(consumer, queueConsumer)
           }
         }.start()
       case Failure(f) =>
-        log.error("Could not connect"); restart("Could not connect", f)
+        System.out.println("Could not connect"); restart("Could not connect", f)
     }
   }
 
   def onStop() {
     Consumer.closeConnections()
-    log.info("Closed all RabbitMQ connections")
+    System.out.println("Closed all RabbitMQ connections")
   }
 
   /** Create a socket connection and receive data until receiver is stopped */
   private def receive(consumer: Consumer, queueConsumer: QueueingConsumer) {
     try {
-      log.info("RabbitMQ consumer start consuming data")
+      System.out.println("RabbitMQ consumer start consuming data")
       while (!isStopped() && consumer.channel.isOpen) {
         
         Try(queueConsumer.nextDelivery())
@@ -101,17 +101,17 @@ class RabbitMQReceiver[R: ClassTag](
       }
     } catch {
       case unknown: Throwable =>
-        log.error("Got this unknown exception: " + unknown, unknown)
+        System.out.println("Got this unknown exception: " + unknown, unknown)
       case exception: Exception =>
-        log.error("Got this Exception: " + exception, exception)
+        System.out.println("Got this Exception: " + exception, exception)
     }
     finally {
-      log.info("it has been stopped")
+      System.out.println("it has been stopped")
       try {
         consumer.close()
       } catch {
         case e: Throwable =>
-          log.error(s"error on close consumer, ignoring it : ${e.getLocalizedMessage}", e)
+          System.out.println(s"error on close consumer, ignoring it : ${e.getLocalizedMessage}", e)
       }
       restart("Trying to connect again")
     }
@@ -127,7 +127,7 @@ class RabbitMQReceiver[R: ClassTag](
       case Failure(e) =>
         //Send noack if not set the auto ack property
         if (sendingBasicAckFromParams(params)) {
-          log.warn(s"failed to process message. Sending noack ...", e)
+          System.out.println(s"failed to process message. Sending noack ...", e)
           consumer.sendBasicNAck(delivery)
         }
     }
