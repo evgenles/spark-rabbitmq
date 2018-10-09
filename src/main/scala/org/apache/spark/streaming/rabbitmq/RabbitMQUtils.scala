@@ -75,9 +75,13 @@ object RabbitMQUtils {
                                                       params: Map[String, String],
                                                       tag:String
                                                     ): ReceiverInputDStream[String] = {
+    System.out.println("---create-stream")
+
     val messageHandler = (rawMessage: Delivery) => new Predef.String(rawMessage.getBody)
+    System.out.println("---create-stream-end")
 
     new RabbitMQInputDStream[String](ssc, params, messageHandler, tag)
+
   }
 
   /**
@@ -95,12 +99,13 @@ object RabbitMQUtils {
                            messageHandler: JFunction[Delivery, R],
                            tag: String = null
                          ): JavaReceiverInputDStream[R] = {
-
+    System.out.println("---create-java-stream")
     implicit val recordCmt: ClassTag[R] = ClassTag(recordClass)
     val cleanedHandler = javaStreamingContext.sparkContext.clean(messageHandler.call _)
 
-
+    System.out.println("---create-java-stream--end")
     createStream[R](javaStreamingContext.ssc, params.asScala.toMap, cleanedHandler, tag)
+
   }
 
   /**

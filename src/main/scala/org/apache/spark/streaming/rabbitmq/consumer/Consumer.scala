@@ -44,7 +44,7 @@ class Consumer(val channel: Channel, params: Map[String, String], tag:String) ex
    * @return The queue consumer that can be used to consume messages by the caller
    */
   def startConsumer: QueueingConsumer = {
-
+    System.out.println("---start-consumer")    
     assert(queueName.nonEmpty && queueName != "", "The queueName is empty")
 
     val autoAck = Consumer.getAutoAckFromParams(params)
@@ -55,6 +55,7 @@ class Consumer(val channel: Channel, params: Map[String, String], tag:String) ex
       channel.basicConsume(queueName, autoAck, queueConsumer)
     else 
       channel.basicConsume(queueName, autoAck, tag, queueConsumer)
+    System.out.println("---start-consumer-end")    
     queueConsumer
   }
 
@@ -62,15 +63,23 @@ class Consumer(val channel: Channel, params: Map[String, String], tag:String) ex
    * Send one basic ack, this ack correspond with the delivery param
    * @param delivery The previous delivery that the queueConsumer send with one message consumed
    */
-  def sendBasicAck(delivery: Delivery): Unit =
+  def sendBasicAck(delivery: Delivery): Unit = {
+    System.out.println("---start-basic-ack")    
     channel.basicAck(delivery.getEnvelope.getDeliveryTag,false)
+    System.out.println("---start-basic-ack-end")    
 
+  }
   /**
    * Send one basic noack, this ack correspond with the delivery param
    * @param delivery The previous delivery that the queueConsumer send with one message consumed
    */
-  def sendBasicNAck(delivery: Delivery): Unit =
+  def sendBasicNAck(delivery: Delivery): Unit ={
+    System.out.println("---start-basic-nack")    
+
     channel.basicNack(delivery.getEnvelope.getDeliveryTag,false,true)
+    System.out.println("---start-basic-nack-end")    
+
+  }
 
   /**
    * Set the number of messages to one when the FairDispatch is called, this is necessary when we want more than one

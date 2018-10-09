@@ -41,8 +41,9 @@ class RabbitMQInputDStream[R: ClassTag](
     params.getOrElse(ConfigParameters.StorageLevelKey, ConfigParameters.DefaultStorageLevel)
 
   override def getReceiver(): Receiver[R] = {
-
+    System.out.println("---get-reciver")
     new RabbitMQReceiver[R](params, StorageLevel.fromString(storageLevelParam), messageHandler, tag)
+
   }
 }
 
@@ -56,6 +57,8 @@ class RabbitMQReceiver[R: ClassTag](
   extends Receiver[R](storageLevel) with Logging {
 
   def onStart() {
+    System.out.println("---reciver-on-start")
+
     implicit val akkaSystem = akka.actor.ActorSystem()
 
     Try {
@@ -78,6 +81,8 @@ class RabbitMQReceiver[R: ClassTag](
       case Failure(f) =>
         System.out.println("Could not connect"); restart("Could not connect", f)
     }
+    System.out.println("---reciver-on-start-end")
+    
   }
 
   def onStop() {
@@ -87,6 +92,8 @@ class RabbitMQReceiver[R: ClassTag](
 
   /** Create a socket connection and receive data until receiver is stopped */
   private def receive(consumer: Consumer, queueConsumer: QueueingConsumer) {
+    System.out.println("---reciver-receive")
+
     try {
       System.out.println("RabbitMQ consumer start consuming data")
       while (!isStopped() && consumer.channel.isOpen) {
@@ -115,9 +122,13 @@ class RabbitMQReceiver[R: ClassTag](
       }
       restart("Trying to connect again")
     }
+    System.out.println("---reciver-receive-end")
+
   }
 
   private def processDelivery(consumer: Consumer, delivery:Delivery) {
+    System.out.println("---reciver-process-delivery")
+
     Try(store(messageHandler(delivery)))
     match {
       case Success(data) =>
@@ -131,5 +142,7 @@ class RabbitMQReceiver[R: ClassTag](
           consumer.sendBasicNAck(delivery)
         }
     }
+    System.out.println("---reciver-process-delivery-end")
+
   }
 }
