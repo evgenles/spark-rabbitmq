@@ -42,7 +42,12 @@ class RabbitMQInputDStream[R: ClassTag](
 
   override def getReceiver(): Receiver[R] = {
     System.out.println("---get-reciver")
-    new RabbitMQReceiver[R](params, StorageLevel.fromString(storageLevelParam), messageHandler, tag)
+    var receiver =  new RabbitMQReceiver[R](params, StorageLevel.fromString(storageLevelParam), messageHandler, tag)
+      if(receiver != null)
+        System.out.println("---get-reciver-success")
+      else
+        System.out.println("---get-reciver-fail")
+      receiver
 
   }
 }
@@ -55,7 +60,8 @@ class RabbitMQReceiver[R: ClassTag](
                                      tag: String = null
                                    )
   extends Receiver[R](storageLevel) with Logging {
-
+    System.out.println("---rabbit-mq-receiver created")
+  
   def onStart() {
     System.out.println("---reciver-on-start")
 
