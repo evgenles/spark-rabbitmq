@@ -25,7 +25,7 @@ import org.apache.spark.streaming.rabbitmq.ConfigParameters
 import org.apache.spark.streaming.rabbitmq.consumer.Consumer
 import org.apache.spark.streaming.rabbitmq.consumer.Consumer._
 import org.apache.spark.streaming.receiver.Receiver
-
+import org.apache.spark.streaming.rabbitmq.logsender.RabbitMqLogSender
 import scala.reflect.ClassTag
 import scala.util._
 
@@ -34,7 +34,9 @@ class RabbitMQInputDStream[R: ClassTag](
                                          @transient ssc_ : StreamingContext,
                                          params: Map[String, String],
                                          messageHandler: Delivery => R,
-                                         tag: String = null
+                                         tag: String = null,
+                                         isLogSenderEnable: Boolean = false,
+                                         logSenderParam : Map[String,String] = null
                                        ) extends ReceiverInputDStream[R](ssc_) with Logging {
 
   private val storageLevelParam =
@@ -42,7 +44,7 @@ class RabbitMQInputDStream[R: ClassTag](
 
   override def getReceiver(): Receiver[R] = {
 
-    new RabbitMQReceiver[R](params, StorageLevel.fromString(storageLevelParam), messageHandler, tag)
+    new RabbitMQReceiver[R](params, StorageLevel.fromString(storageLevelParam), messageHandler, tag, isLogSenderEnable, logSenderParam)
   }
 }
 
@@ -51,9 +53,13 @@ class RabbitMQReceiver[R: ClassTag](
                                      params: Map[String, String],
                                      storageLevel: StorageLevel,
                                      messageHandler: Delivery => R,
-                                     tag: String = null
+                                     tag: String = null,
+                                     isLogSenderEnable: Boolean = false,
+                                     logSenderParam : Map[String,String] = null
                                    )
   extends Receiver[R](storageLevel) with Logging {
+
+  private[rabbitmq] var logSender :RabbitMqLogSender = if(isLogSenderEnable)new RabbitMqLogSender(logSenderParam) else null
 
   def onStart() {
     implicit val akkaSystem = akka.actor.ActorSystem()
@@ -95,6 +101,7 @@ class RabbitMQReceiver[R: ClassTag](
         match {
           case Success(delivery) =>
             processDelivery(consumer, delivery)
+            logSender.Publish(delivery.getBody)
           case Failure(e) =>
             throw new Exception(s"An error happen while getting next delivery: ${e.getLocalizedMessage}", e)
         }

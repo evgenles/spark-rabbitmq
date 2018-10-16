@@ -36,14 +36,19 @@ object RabbitMQUtils {
    * @param ssc            StreamingContext object
    * @param params         RabbitMQ params
    * @param messageHandler Function to convert he raw type of the rabbitMQ messages to the type R
+    *@param tag Consumer Tag
+    *@param isLogSenderEnable log inputted data to rabbit?
+    *@param logSenderParam params for log sender (if enabled): host, username, password, virtualHost, exchange, routingKey
    */
   def createStream[R: ClassTag](
                                  ssc: StreamingContext,
                                  params: Map[String, String],
                                  messageHandler: Delivery => R,
-                                 tag: String = null
-                               ): ReceiverInputDStream[R] = {
-    new RabbitMQInputDStream[R](ssc, params, messageHandler, tag)
+                                 tag: String = null,
+                                 isLogSenderEnable: Boolean = false,
+                                 logSenderParam : Map[String,String] = null
+                               ): RabbitMQInputDStream[R] = {
+    new RabbitMQInputDStream[R](ssc, params, messageHandler, tag, isLogSenderEnable, logSenderParam)
   }
 
   /**
@@ -87,13 +92,18 @@ object RabbitMQUtils {
    * @param recordClass          Class type for R
    * @param params               RabbitMQ params
    * @param messageHandler       Function to convert he raw type of the rabbitMQ messages to the type R
+    *@param tag Consumer Tag
+    *@param isLogSenderEnable log inputted data to rabbit?
+    *@param logSenderParam params for log sender (if enabled): host, username, password, virtualHost, exchange, routingKey
    */
   def createJavaStream[R](
                            javaStreamingContext: JavaStreamingContext,
                            recordClass: Class[R],
                            params: JMap[String, String],
                            messageHandler: JFunction[Delivery, R],
-                           tag: String = null
+                           tag: String = null,
+                           isLogSenderEnable: Boolean = false,
+                           logSenderParam : Map[String,String] = null
                          ): JavaReceiverInputDStream[R] = {
 
     implicit val recordCmt: ClassTag[R] = ClassTag(recordClass)
