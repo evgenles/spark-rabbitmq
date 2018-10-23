@@ -107,7 +107,7 @@ class RabbitMQReceiver[R: ClassTag](
           case Failure(e) => {
             if (isLogSenderEnable) {
               try {
-                val jsonLog = s"""{"Exception":${e.toString}, "Comment":"Cannot get next delivery", "ApplicationId":"${applicationId}","InstantId":"$tag"}"""
+                val jsonLog = s"""{"Exception":"${e.toString}", "Comment":"Cannot get next delivery", "ApplicationId":"${applicationId}","InstantId":"$tag"}"""
                 logSender.Publish(jsonLog.getBytes())
               }
               catch {
