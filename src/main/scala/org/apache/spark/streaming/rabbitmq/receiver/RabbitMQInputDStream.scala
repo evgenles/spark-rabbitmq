@@ -31,39 +31,40 @@ import scala.util._
 
 private[rabbitmq]
 class RabbitMQInputDStream[R: ClassTag](
-                                         @transient ssc_ : StreamingContext,
+                                         ssc: StreamingContext,
                                          params: Map[String, String],
                                          messageHandler: Delivery => R,
                                          tag: String = null,
                                          isLogSenderEnable: Boolean = false,
-                                         logSenderParam : Map[String,String] = null
-                                       ) extends ReceiverInputDStream[R](ssc_) with Logging {
-
+                                         logSenderParam: Map[String, String] = null
+                                       ) extends ReceiverInputDStream[R](ssc) with Logging {
   private val storageLevelParam =
     params.getOrElse(ConfigParameters.StorageLevelKey, ConfigParameters.DefaultStorageLevel)
 
   override def getReceiver(): Receiver[R] = {
-
-    new RabbitMQReceiver[R](params, StorageLevel.fromString(storageLevelParam), messageHandler, tag, isLogSenderEnable, logSenderParam)
+    new RabbitMQReceiver[R](ssc, params, StorageLevel.fromString(storageLevelParam), messageHandler, tag, isLogSenderEnable, logSenderParam)
   }
 }
 
 private[rabbitmq]
 class RabbitMQReceiver[R: ClassTag](
+                                     ssc: StreamingContext,
                                      params: Map[String, String],
                                      storageLevel: StorageLevel,
                                      messageHandler: Delivery => R,
                                      tag: String = null,
                                      isLogSenderEnable: Boolean = false,
-                                     logSenderParam : Map[String,String] = null
+                                     logSenderParam: Map[String, String] = null
                                    )
   extends Receiver[R](storageLevel) with Logging {
-
-  private[rabbitmq] var logSender :RabbitMqLogSender = if(isLogSenderEnable)new RabbitMqLogSender(logSenderParam) else null
+  private[rabbitmq] var logSender: RabbitMqLogSender = null
 
   def onStart() {
     implicit val akkaSystem = akka.actor.ActorSystem()
-
+    if (isLogSenderEnable && logSender == null) {
+      logSender = new RabbitMqLogSender(logSenderParam)
+      log.info("LogSender created")
+    }
     Try {
       val consumer = Consumer(params, tag)
 
@@ -93,17 +94,30 @@ class RabbitMQReceiver[R: ClassTag](
 
   /** Create a socket connection and receive data until receiver is stopped */
   private def receive(consumer: Consumer, queueConsumer: QueueingConsumer) {
+    log.info("Receive started, isLogEnable" + isLogSenderEnable + " logSender == null " + (logSender == null));
+
     try {
       log.info("RabbitMQ consumer start consuming data")
       while (!isStopped() && consumer.channel.isOpen) {
-        
         Try(queueConsumer.nextDelivery())
         match {
           case Success(delivery) =>
             processDelivery(consumer, delivery)
-            logSender.Publish(delivery.getBody)
-          case Failure(e) =>
+          case Failure(e) => {
+            if (isLogSenderEnable) {
+              try {
+                val jsonLog = s"""{"Exception":${e.toString}, "Comment":"Cannot get next delivery", "ApplicationId":"${ssc.sparkContext.applicationId}","InstantId":"$tag"}"""
+                logSender.Publish(jsonLog.getBytes())
+              }
+              catch {
+                case unknown: Throwable =>
+                  log.error("Got this unknown exception: " + unknown, unknown)
+                case exception: Exception =>
+                  log.error("Got this Exception: " + exception, exception)
+              }
+            }
             throw new Exception(s"An error happen while getting next delivery: ${e.getLocalizedMessage}", e)
+          }
         }
       }
     } catch {
@@ -124,18 +138,43 @@ class RabbitMQReceiver[R: ClassTag](
     }
   }
 
-  private def processDelivery(consumer: Consumer, delivery:Delivery) {
+  private def processDelivery(consumer: Consumer, delivery: Delivery) {
     Try(store(messageHandler(delivery)))
     match {
-      case Success(data) =>
+      case Success(data) => {
         //Send ack if not set the auto ack property
         if (sendingBasicAckFromParams(params))
           consumer.sendBasicAck(delivery)
+        if (isLogSenderEnable) {
+          try {
+            val jsonLog = s"""{"Delivery":${delivery.getBody.toString},"ApplicationId":"${ssc.sparkContext.applicationId}","InstantId":"$tag"}"""
+            logSender.Publish(jsonLog.getBytes())
+          }
+          catch {
+            case unknown: Throwable =>
+              log.error("Got this unknown exception: " + unknown, unknown)
+            case exception: Exception =>
+              log.error("Got this Exception: " + exception, exception)
+          }
+        }
+      }
       case Failure(e) =>
         //Send noack if not set the auto ack property
         if (sendingBasicAckFromParams(params)) {
           log.warn(s"failed to process message. Sending noack ...", e)
           consumer.sendBasicNAck(delivery)
+          if (isLogSenderEnable) {
+            try {
+              val jsonLog = s"""{"Delivery":${delivery.getBody.toString},"ApplicationId":"${ssc.sparkContext.applicationId}","InstantId":"$tag", "Exception" : "${e.toString}}, "Comment":"Can`t process delivery" }"""
+              logSender.Publish(jsonLog.getBytes())
+            }
+            catch {
+              case unknown: Throwable =>
+                log.error("Got this unknown exception: " + unknown, unknown)
+              case exception: Exception =>
+                log.error("Got this Exception: " + exception, exception)
+            }
+          }
         }
     }
   }

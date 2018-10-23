@@ -24,11 +24,10 @@ import org.apache.spark.streaming.api.java.{JavaInputDStream, JavaReceiverInputD
 import org.apache.spark.streaming.dstream.{InputDStream, ReceiverInputDStream}
 import org.apache.spark.streaming.rabbitmq.distributed.{JavaRabbitMQDistributedKey, RabbitMQDStream, RabbitMQDistributedKey}
 import org.apache.spark.streaming.rabbitmq.receiver.RabbitMQInputDStream
-
 import scala.collection.JavaConverters._
 import scala.reflect.ClassTag
 
-object RabbitMQUtils {
+object RabbitMQUtils  {
 
   /**
    * Create an input stream that receives messages from a RabbitMQ.
@@ -63,7 +62,6 @@ object RabbitMQUtils {
                                                       params: Map[String, String]
                                                     ): ReceiverInputDStream[String] = {
     val messageHandler = (rawMessage: Delivery) => new Predef.String(rawMessage.getBody)
-
     new RabbitMQInputDStream[String](ssc, params, messageHandler,null)
   }
 
@@ -81,7 +79,7 @@ object RabbitMQUtils {
                                                       tag:String
                                                     ): ReceiverInputDStream[String] = {
     val messageHandler = (rawMessage: Delivery) => new Predef.String(rawMessage.getBody)
-
+    log.info("[RabbitMQUtils-createStream] Base params: " + params)
     new RabbitMQInputDStream[String](ssc, params, messageHandler, tag)
   }
 
@@ -103,14 +101,13 @@ object RabbitMQUtils {
                            messageHandler: JFunction[Delivery, R],
                            tag: String = null,
                            isLogSenderEnable: Boolean = false,
-                           logSenderParam : Map[String,String] = null
+                           logSenderParam : JMap[String,String] = null
                          ): JavaReceiverInputDStream[R] = {
 
     implicit val recordCmt: ClassTag[R] = ClassTag(recordClass)
     val cleanedHandler = javaStreamingContext.sparkContext.clean(messageHandler.call _)
 
-
-    createStream[R](javaStreamingContext.ssc, params.asScala.toMap, cleanedHandler, tag)
+    createStream[R](javaStreamingContext.ssc, params.asScala.toMap, cleanedHandler, tag, isLogSenderEnable, logSenderParam.asScala.toMap)
   }
 
   /**
