@@ -31,24 +31,25 @@ import scala.util._
 
 private[rabbitmq]
 class RabbitMQInputDStream[R: ClassTag](
-                                         ssc: StreamingContext,
+                                         @transient ssc: StreamingContext,
                                          params: Map[String, String],
                                          messageHandler: Delivery => R,
                                          tag: String = null,
                                          isLogSenderEnable: Boolean = false,
                                          logSenderParam: Map[String, String] = null
                                        ) extends ReceiverInputDStream[R](ssc) with Logging {
+  var appId =  if(ssc!=null&&ssc.sparkContext!=null) ssc.sparkContext.applicationId else "Unknown"
   private val storageLevelParam =
     params.getOrElse(ConfigParameters.StorageLevelKey, ConfigParameters.DefaultStorageLevel)
 
   override def getReceiver(): Receiver[R] = {
-    new RabbitMQReceiver[R](ssc, params, StorageLevel.fromString(storageLevelParam), messageHandler, tag, isLogSenderEnable, logSenderParam)
+    new RabbitMQReceiver[R](appId, params, StorageLevel.fromString(storageLevelParam), messageHandler, tag, isLogSenderEnable, logSenderParam)
   }
 }
 
 private[rabbitmq]
 class RabbitMQReceiver[R: ClassTag](
-                                     ssc: StreamingContext,
+                                     applicationId:String,
                                      params: Map[String, String],
                                      storageLevel: StorageLevel,
                                      messageHandler: Delivery => R,
@@ -94,7 +95,7 @@ class RabbitMQReceiver[R: ClassTag](
 
   /** Create a socket connection and receive data until receiver is stopped */
   private def receive(consumer: Consumer, queueConsumer: QueueingConsumer) {
-    log.info("Receive started, isLogEnable" + isLogSenderEnable + " logSender == null " + (logSender == null));
+    log.info("Receive started, isLogEnable" + isLogSenderEnable + " logSender == null " + (logSender == null))
 
     try {
       log.info("RabbitMQ consumer start consuming data")
@@ -106,7 +107,7 @@ class RabbitMQReceiver[R: ClassTag](
           case Failure(e) => {
             if (isLogSenderEnable) {
               try {
-                val jsonLog = s"""{"Exception":${e.toString}, "Comment":"Cannot get next delivery", "ApplicationId":"${ssc.sparkContext.applicationId}","InstantId":"$tag"}"""
+                val jsonLog = s"""{"Exception":${e.toString}, "Comment":"Cannot get next delivery", "ApplicationId":"${applicationId}","InstantId":"$tag"}"""
                 logSender.Publish(jsonLog.getBytes())
               }
               catch {
@@ -147,7 +148,7 @@ class RabbitMQReceiver[R: ClassTag](
           consumer.sendBasicAck(delivery)
         if (isLogSenderEnable) {
           try {
-            val jsonLog = s"""{"Delivery":${delivery.getBody.toString},"ApplicationId":"${ssc.sparkContext.applicationId}","InstantId":"$tag"}"""
+            val jsonLog = s"""{"Delivery":${new String(delivery.getBody(), "UTF-8")},"ApplicationId":"${applicationId}","InstantId":"$tag"}"""
             logSender.Publish(jsonLog.getBytes())
           }
           catch {
@@ -165,7 +166,7 @@ class RabbitMQReceiver[R: ClassTag](
           consumer.sendBasicNAck(delivery)
           if (isLogSenderEnable) {
             try {
-              val jsonLog = s"""{"Delivery":${delivery.getBody.toString},"ApplicationId":"${ssc.sparkContext.applicationId}","InstantId":"$tag", "Exception" : "${e.toString}}, "Comment":"Can`t process delivery" }"""
+              val jsonLog = s"""{"Delivery":${new String(delivery.getBody(), "UTF-8")},"ApplicationId":"${applicationId}","InstantId":"$tag", "Exception" : "${e.toString}", "Comment":"Cannot process delivery" }"""
               logSender.Publish(jsonLog.getBytes())
             }
             catch {

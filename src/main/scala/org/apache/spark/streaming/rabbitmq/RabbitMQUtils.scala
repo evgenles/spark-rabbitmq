@@ -79,7 +79,6 @@ object RabbitMQUtils  {
                                                       tag:String
                                                     ): ReceiverInputDStream[String] = {
     val messageHandler = (rawMessage: Delivery) => new Predef.String(rawMessage.getBody)
-    log.info("[RabbitMQUtils-createStream] Base params: " + params)
     new RabbitMQInputDStream[String](ssc, params, messageHandler, tag)
   }
 
