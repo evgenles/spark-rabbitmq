@@ -26,6 +26,8 @@ import org.apache.spark.streaming.rabbitmq.consumer.Consumer
 import org.apache.spark.streaming.rabbitmq.consumer.Consumer._
 import org.apache.spark.streaming.receiver.Receiver
 import org.apache.spark.streaming.rabbitmq.logsender.RabbitMqLogSender
+import org.apache.spark.streaming.rabbitmq.models.DeliveryParseException
+
 import scala.reflect.ClassTag
 import scala.util._
 
@@ -38,7 +40,7 @@ class RabbitMQInputDStream[R: ClassTag](
                                          isLogSenderEnable: Boolean = false,
                                          logSenderParam: Map[String, String] = null
                                        ) extends ReceiverInputDStream[R](ssc) with Logging {
-  var appId =  if(ssc!=null&&ssc.sparkContext!=null) ssc.sparkContext.applicationId else "Unknown"
+  var appId = if (ssc != null && ssc.sparkContext != null) ssc.sparkContext.applicationId else "Unknown"
   private val storageLevelParam =
     params.getOrElse(ConfigParameters.StorageLevelKey, ConfigParameters.DefaultStorageLevel)
 
@@ -49,7 +51,7 @@ class RabbitMQInputDStream[R: ClassTag](
 
 private[rabbitmq]
 class RabbitMQReceiver[R: ClassTag](
-                                     applicationId:String,
+                                     applicationId: String,
                                      params: Map[String, String],
                                      storageLevel: StorageLevel,
                                      messageHandler: Delivery => R,
@@ -140,43 +142,53 @@ class RabbitMQReceiver[R: ClassTag](
   }
 
   private def processDelivery(consumer: Consumer, delivery: Delivery) {
-    Try(store(messageHandler(delivery)))
-    match {
-      case Success(data) => {
-        //Send ack if not set the auto ack property
-        if (sendingBasicAckFromParams(params))
-          consumer.sendBasicAck(delivery)
-        if (isLogSenderEnable) {
-          try {
-            val jsonLog = s"""{"Delivery":${new String(delivery.getBody(), "UTF-8")},"ApplicationId":"${applicationId}","InstantId":"$tag"}"""
-            logSender.Publish(jsonLog.getBytes())
-          }
-          catch {
-            case unknown: Throwable =>
-              log.error("Got this unknown exception: " + unknown, unknown)
-            case exception: Exception =>
-              log.error("Got this Exception: " + exception, exception)
-          }
+    try {
+      store(messageHandler(delivery))
+      //Send ack if not set the auto ack property
+      if (sendingBasicAckFromParams(params))
+        consumer.sendBasicAck(delivery)
+      if (isLogSenderEnable) {
+        try {
+          val jsonLog = s"""{"Delivery":${new String(delivery.getBody(), "UTF-8")},"ApplicationId":"${applicationId}","InstantId":"$tag"}"""
+          logSender.Publish(jsonLog.getBytes())
+        }
+        catch {
+          case unknown: Throwable =>
+            log.error("Got this unknown exception: " + unknown, unknown)
+          case exception: Exception =>
+            log.error("Got this Exception: " + exception, exception)
         }
       }
-      case Failure(e) =>
+    }
+    catch {
+      case jsonE: DeliveryParseException =>
+        {
+          consumer.sendBasicAck(delivery)
+          RabbitLogFail(delivery, jsonE)
+        }
+      case e: Exception =>
+
         //Send noack if not set the auto ack property
         if (sendingBasicAckFromParams(params)) {
           log.warn(s"failed to process message. Sending noack ...", e)
           consumer.sendBasicNAck(delivery)
-          if (isLogSenderEnable) {
-            try {
-              val jsonLog = s"""{"Delivery":${new String(delivery.getBody(), "UTF-8")},"ApplicationId":"${applicationId}","InstantId":"$tag", "Exception" : "${e.toString}", "Comment":"Cannot process delivery" }"""
-              logSender.Publish(jsonLog.getBytes())
-            }
-            catch {
-              case unknown: Throwable =>
-                log.error("Got this unknown exception: " + unknown, unknown)
-              case exception: Exception =>
-                log.error("Got this Exception: " + exception, exception)
-            }
-          }
+          RabbitLogFail(delivery, e)
         }
+    }
+  }
+
+  private def RabbitLogFail(delivery: Delivery, e: Throwable) {
+    if (isLogSenderEnable) {
+      try {
+        val jsonLog = s"""{"Delivery":${new String(delivery.getBody(), "UTF-8")},"ApplicationId":"${applicationId}","InstantId":"$tag", "Exception" : "${e.toString}", "Comment":"Cannot process delivery" }"""
+        logSender.Publish(jsonLog.getBytes())
+      }
+      catch {
+        case unknown: Throwable =>
+          log.error("Got this unknown exception: " + unknown, unknown)
+        case exception: Exception =>
+          log.error("Got this Exception: " + exception, exception)
+      }
     }
   }
 }
