@@ -149,7 +149,7 @@ class RabbitMQReceiver[R: ClassTag](
         consumer.sendBasicAck(delivery)
       if (isLogSenderEnable) {
         try {
-          val jsonLog = s"""{"Delivery":${new String(delivery.getBody(), "UTF-8")},"ApplicationId":"${applicationId}","InstantId":"$tag"}"""
+          val jsonLog = s"""{"SuccessDelivery":${new String(delivery.getBody(), "UTF-8")},"ApplicationId":"${applicationId}","InstantId":"$tag"}"""
           logSender.Publish(jsonLog.getBytes())
         }
         catch {
@@ -180,7 +180,7 @@ class RabbitMQReceiver[R: ClassTag](
   private def RabbitLogFail(delivery: Delivery, e: Throwable) {
     if (isLogSenderEnable) {
       try {
-        val jsonLog = s"""{"Delivery":${new String(delivery.getBody(), "UTF-8")},"ApplicationId":"${applicationId}","InstantId":"$tag", "Exception" : "${e.toString}", "Comment":"Cannot process delivery" }"""
+        val jsonLog = s"""{"FailedDelivery":"${new String(delivery.getBody(), "UTF-8").replaceAll("\"", "\\\\\"")}","ApplicationId":"${applicationId}","InstantId":"$tag", "Exception" : "${e.toString}", "Comment":"Cannot process delivery" }"""
         logSender.Publish(jsonLog.getBytes())
       }
       catch {
