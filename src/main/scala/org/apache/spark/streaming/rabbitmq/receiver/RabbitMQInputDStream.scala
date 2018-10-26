@@ -18,16 +18,18 @@ package org.apache.spark.streaming.rabbitmq.receiver
 import com.rabbitmq.client.QueueingConsumer.Delivery
 import com.rabbitmq.client._
 import org.apache.spark.internal.Logging
-import org.apache.spark.storage.StorageLevel
+import org.apache.spark.storage.{StorageLevel, StreamBlockId}
 import org.apache.spark.streaming.StreamingContext
 import org.apache.spark.streaming.dstream.ReceiverInputDStream
 import org.apache.spark.streaming.rabbitmq.ConfigParameters
 import org.apache.spark.streaming.rabbitmq.consumer.Consumer
 import org.apache.spark.streaming.rabbitmq.consumer.Consumer._
-import org.apache.spark.streaming.receiver.Receiver
+import org.apache.spark.streaming.receiver.{BlockGenerator, BlockGeneratorListener, Receiver}
 import org.apache.spark.streaming.rabbitmq.logsender.RabbitMqLogSender
 import org.apache.spark.streaming.rabbitmq.models.DeliveryParseException
 
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 import scala.util._
 
@@ -62,27 +64,35 @@ class RabbitMQReceiver[R: ClassTag](
   extends Receiver[R](storageLevel) with Logging {
   private[rabbitmq] var logSender: RabbitMqLogSender = null
 
+  @transient var _consumer: Consumer = _
+
+  private var _blockGenerator: BlockGenerator = null
+  def consumer: Consumer =
+    _consumer
+
   def onStart() {
+    _blockGenerator = supervisor.createBlockGenerator(new GeneratedBlockHandler)
+    _blockGenerator.start()
     implicit val akkaSystem = akka.actor.ActorSystem()
     if (isLogSenderEnable && logSender == null) {
       logSender = new RabbitMqLogSender(logSenderParam)
       log.info("LogSender created")
     }
     Try {
-      val consumer = Consumer(params, tag)
+      _consumer = Consumer(params, tag)
 
       if (getFairDispatchFromParams(params))
-        consumer.setFairDispatchQoS(getPrefetchCountFromParams(params))
+        _consumer.setFairDispatchQoS(getPrefetchCountFromParams(params))
 
-      consumer.setQueue(params)
+      _consumer.setQueue(params)
 
-      (consumer, consumer.startConsumer)
+      (_consumer, _consumer.startConsumer)
     } match {
-      case Success((consumer, queueConsumer)) =>
+      case Success((_consumer, queueConsumer)) =>
         log.info("onStart, Connecting..")
         new Thread() {
           override def run() {
-            receive(consumer, queueConsumer)
+            receive(_consumer, queueConsumer)
           }
         }.start()
       case Failure(f) =>
@@ -176,6 +186,27 @@ class RabbitMQReceiver[R: ClassTag](
         }
     }
   }
+  private def StoreBlock( blockId: StreamBlockId, arrayBuffer: mutable.ArrayBuffer[_]): Unit ={
+    var count = 0
+    var pushed = false
+    var exception: Exception = null
+    while (!pushed && count <= 3) {
+      try {
+        store(arrayBuffer.asInstanceOf[mutable.ArrayBuffer[R]])
+        pushed = true
+      } catch {
+        case ex: Exception =>
+          count += 1
+          exception = ex
+      }
+    }
+    if (pushed) {
+      logInfo("block " + blockId + " pushed " + arrayBuffer.length + "messages")
+    } else {
+      stop("Error while storing block into Spark", exception)
+    }
+  }
+
 
   private def RabbitLogFail(delivery: Delivery, e: Throwable) {
     if (isLogSenderEnable) {
@@ -189,6 +220,27 @@ class RabbitMQReceiver[R: ClassTag](
         case exception: Exception =>
           log.error("Got this Exception: " + exception, exception)
       }
+    }
+  }
+
+  private final class GeneratedBlockHandler
+    extends BlockGeneratorListener {
+
+
+    def onAddData(data: Any, metadata: Any): Unit = {
+      //      consumer.finish(data.asInstanceOf[NSQMessageWrapper].getMessage)
+    }
+
+    def onGenerateBlock(blockId: StreamBlockId): Unit = {
+    }
+
+    def onPushBlock(blockId: StreamBlockId, arrayBuffer: ArrayBuffer[_]): Unit = {
+      // Store block and commit the blocks offset
+      StoreBlock(blockId, arrayBuffer)
+    }
+
+    def onError(message: String, throwable: Throwable): Unit = {
+      reportError(message, throwable)
     }
   }
 }
