@@ -74,7 +74,7 @@ class RabbitMQReceiver[R: ClassTag](
     _consumer
 
   def onStart() {
-    if(_blockGenerator != null) _blockGenerator = supervisor.createBlockGenerator(new GeneratedBlockHandler)
+    if(_blockGenerator == null) _blockGenerator = supervisor.createBlockGenerator(new GeneratedBlockHandler)
     _blockGenerator.start()
     implicit val akkaSystem = akka.actor.ActorSystem()
     if (isLogSenderEnable && logSender == null) {
@@ -150,7 +150,7 @@ class RabbitMQReceiver[R: ClassTag](
         case e: Throwable =>
           log.error(s"error on close consumer, ignoring it : ${e.getLocalizedMessage}", e)
       }
-      restart("Trying to connect again")
+      restart("Trying to connect again", null, 60000)
     }
   }
 
