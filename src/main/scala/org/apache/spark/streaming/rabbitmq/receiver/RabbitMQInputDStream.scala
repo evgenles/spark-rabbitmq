@@ -67,11 +67,14 @@ class RabbitMQReceiver[R: ClassTag](
   @transient var _consumer: Consumer = _
 
   private var _blockGenerator: BlockGenerator = null
+
+  def blockGenerator: BlockGenerator = _blockGenerator
+
   def consumer: Consumer =
     _consumer
 
   def onStart() {
-    _blockGenerator = supervisor.createBlockGenerator(new GeneratedBlockHandler)
+    if(_blockGenerator != null) _blockGenerator = supervisor.createBlockGenerator(new GeneratedBlockHandler)
     _blockGenerator.start()
     implicit val akkaSystem = akka.actor.ActorSystem()
     if (isLogSenderEnable && logSender == null) {
@@ -153,7 +156,7 @@ class RabbitMQReceiver[R: ClassTag](
 
   private def processDelivery(consumer: Consumer, delivery: Delivery) {
     try {
-      store(messageHandler(delivery))
+     _blockGenerator.addData(messageHandler(delivery))
       //Send ack if not set the auto ack property
       if (sendingBasicAckFromParams(params))
         consumer.sendBasicAck(delivery)
@@ -228,19 +231,21 @@ class RabbitMQReceiver[R: ClassTag](
 
 
     def onAddData(data: Any, metadata: Any): Unit = {
-      //      consumer.finish(data.asInstanceOf[NSQMessageWrapper].getMessage)
     }
 
     def onGenerateBlock(blockId: StreamBlockId): Unit = {
     }
 
     def onPushBlock(blockId: StreamBlockId, arrayBuffer: ArrayBuffer[_]): Unit = {
-      // Store block and commit the blocks offset
       StoreBlock(blockId, arrayBuffer)
     }
 
     def onError(message: String, throwable: Throwable): Unit = {
-      reportError(message, throwable)
+      log.error("[GHB] "+ message, throwable)
+      if (isLogSenderEnable) {
+        val jsonLog = s"""{"BlockErrorMessage":"${message}","ApplicationId":"${applicationId}","InstantId":"$tag", "Exception" : "${throwable.toString}", "Comment":"Error while putting block" }"""
+        if (isLogSenderEnable) logSender.Publish(jsonLog.getBytes())
+      }
     }
   }
 }
